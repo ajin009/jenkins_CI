@@ -1,0 +1,100 @@
+pipeline {
+    agent {
+        label 'java'
+    }
+
+    environment {
+        AWS_ACCOUNT_ID = "<aws_account_id"
+        AWS_DEFAULT_REGION = "<aws_region>"
+        IMAGE_REPO_NAME = "<repo_name"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        REPOSITORY_URI = "<aws_account_id>.dkr.ecr.<aws_region>.amazonaws.com/<repo_name>"
+    }
+
+    stages {
+        stage('Logging into AWS ECR') {
+            steps {
+                script {
+                    sh """aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | sudo docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"""
+                }
+            }
+        }
+
+        stage('Cloning Git') {
+            steps {
+                 
+                 dir ('code'){
+                
+                checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'teting_idd', url: 'https://github.com/user_name/repo_name']])
+            }
+          }        
+        }
+
+        stage('Building image') {
+            steps {
+            
+               dir ('code'){
+              
+                script {
+                    dockerImage = docker.build "${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+                }
+            }
+          }
+        }
+
+
+        stage('Pushing to ECR') {
+            steps {
+            
+              dir ('code'){
+                script {
+                    sh """docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${REPOSITORY_URI}:${IMAGE_TAG}"""
+                    sh """docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"""
+                  }
+                }
+            }
+        }
+
+        stage('cloning deploy repo and tag update to deployment') {
+
+            steps { 
+            
+                  script{
+
+                    dir ('deploy'){
+                    
+            checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'demo2', url: 'https://github.com/user_name/repo_name']])
+            //   withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'demo2', usernameVariable: 'GIT_AUTHOR_NAME', passwordVariable: 'GIT_PASSWORD']]) {
+                  sh 'echo pushing '
+                  sh 'git config --global user.email "<mail_id>"'
+                  sh 'git config --global user.name "<user_name>"'
+                  sh 'git checkout master'
+                             
+                 // Set BUILD_NUMBER
+                   // BUILD_NUMBER = BUILD_NUMBER
+
+                 // Print the BUILD_NUMBER
+                    echo "BUILD_NUMBER is ${BUILD_NUMBER}"
+
+                 // Update deployment.yaml with the new image tag
+                    IMAGE_TAG = "${REPOSITORY_URI}:${BUILD_NUMBER}"
+
+                 // Replace the image field in deployment.yaml with the updated IMAGE_TAG
+                    sh "sed -i 's#image:.*#image: ${IMAGE_TAG}#' /home/ubuntu/slave/workspace/temp/deploy/workloads/deployment.yaml"
+                 
+                  sh "git add ."
+                  sh "git commit -m '$BUILD_NUMBER committed' "
+                  sh 'git config --global push.default simple'
+                  sh "pwd"
+                withCredentials([usernamePassword(credentialsId: '****', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'user_name’')]) {
+                        sh('git push https://${ajin009}:${GIT_PASSWORD}@github.com/user_name/repo_name')
+                                             
+                    }
+
+                         
+                }
+             }
+          }
+        }
+   }
+}
